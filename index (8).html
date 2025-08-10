@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Pixel Rebellion — Pixel Art Advanced Edition (Mobile Ready)</title>
+<style>
+  html,body{height:100%;margin:0;background:#0b0f14;color:#d7f9ff;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;touch-action:none}
+  .wrap{display:flex;align-items:center;justify-content:center;min-height:100%}
+  .card{background:#0f141b;border:1px solid #17202b;border-radius:16px;box-shadow:0 12px 28px rgba(0,0,0,.35);padding:16px;max-width:960px;width:clamp(320px,92vw,960px)}
+  h1,h2{margin:6px 0 10px 0}
+  p{margin:6px 0}
+  canvas{width:100%;height:auto;image-rendering:pixelated;border-radius:12px;border:1px solid #17202b;background:#0a0e13;touch-action:none}
+  .row{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .muted{opacity:.85}
+  button{border:0;border-radius:10px;padding:10px 14px;background:#7df3ff;color:#021018;font-weight:700;cursor:pointer}
+  button.secondary{background:#1b2633;color:#d7f9ff;border:1px solid #223041}
+  .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#122030;border:1px solid #1a2c40;font-size:.9rem}
+  .log{max-height:120px;overflow:auto;background:#0e1520;border:1px solid #17202b;border-radius:10px;padding:8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem}
+  .bar{height:8px;background:#122030;border:1px solid #1b2b3d;border-radius:999px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,#6dfc8b,#8df);width:0%}
+  ul{margin:6px 0 0 18px}
+  /* Mobile controls */
+  .controls{position:fixed;left:0;right:0;bottom:10px;display:none;gap:10px;justify-content:space-between;align-items:flex-end;padding:0 10px;pointer-events:auto;z-index:5}
+  .pad{display:flex;gap:10px}
+  .btn{user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;min-width:72px;min-height:56px;border-radius:12px;border:1px solid #223041;background:#162330;color:#d7f9ff;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .btn.primary{background:#7df3ff;color:#021018}
+  .btn:active{transform:scale(0.98)}
+  @media (max-width: 900px), (pointer: coarse){
+    .controls{display:flex}
+    .log{max-height:80px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card" id="menuCard">
+    <h1>Pixel Rebellion — Pixel Art Advanced Edition</h1>
+    <p class="muted">Retro 2D platformer. Run, jump, climb ladders, avoid hostile pixels, reach the portal. Progress is saved. Mobile controls included.</p>
+    <div class="row">
+      <div>
+        <p><span class="pill">Controls</span></p>
+        <ul>
+          <li>Desktop: ← → move, Z / Space / ↑ jump, ↑/↓ on ladder climb, P pause, R restart</li>
+          <li>Mobile: LEFT / RIGHT / UP / DOWN / JUMP buttons, PAUSE</li>
+        </ul>
+      </div>
+      <div>
+        <p>Best Level Reached: <b id="bestLbl">—</b></p>
+        <p>Saved Progress: <b id="saveLbl">None</b></p>
+        <div class="row" style="gap:6px">
+          <button id="newBtn">New Game</button>
+          <button class="secondary" id="contBtn" disabled>Continue</button>
+          <button class="secondary" id="clearBtn">Clear Save</button>
+        </div>
+        <p class="muted">If you don't hear music, tap "New Game" or "Continue" to enable audio.</p>
+      </div>
+    </div>
+    <p class="muted">30 levels. Enemies: horizontal patrol & vertical sentry. Lives: 3. Score: +100 per clear.</p>
+  </div>
+
+  <div class="card" id="gameCard" style="display:none">
+    <canvas id="game" width="960" height="540"></canvas>
+    <div class="row">
+      <div class="muted">
+        Level: <b id="levelLbl">1</b> / <b id="maxLbl">30</b> •
+        Lives: <b id="livesLbl">3</b> •
+        Score: <b id="scoreLbl">0</b>
+      </div>
+      <div>
+        <button class="secondary" id="pauseBtn">Pause</button>
+        <button id="restartBtn">Restart Level</button>
+        <button class="secondary" id="menuBtn">Menu</button>
+      </div>
+    </div>
+    <div class="bar" aria-label="progress to exit"><i id="progBar"></i></div>
+    <div class="log" id="log" aria-live="polite"></div>
+  </div>
+</div>
+
+<!-- On-screen controls -->
+<div class="controls" id="controls">
+  <div class="pad">
+    <div class="btn" data-key="left">LEFT</div>
+    <div class="btn" data-key="right">RIGHT</div>
+  </div>
+  <div class="pad">
+    <div class="btn" data-key="up">UP</div>
+    <div class="btn" data-key="down">DOWN</div>
+    <div class="btn primary" data-key="jump">JUMP</div>
+  </div>
+  <div class="pad">
+    <div class="btn" id="pauseTouch">PAUSE</div>
+  </div>
+</div>
+
+<script>
+(()=>{
+  const $ = s=>document.querySelector(s);
+  // UI
+  const menuCard=$("#menuCard"), gameCard=$("#gameCard");
+  const newBtn=$("#newBtn"), contBtn=$("#contBtn"), clearBtn=$("#clearBtn");
+  const levelLbl=$("#levelLbl"), livesLbl=$("#livesLbl"), scoreLbl=$("#scoreLbl");
+  const bestLbl=$("#bestLbl"), saveLbl=$("#saveLbl");
+  const pauseBtn=$("#pauseBtn"), restartBtn=$("#restartBtn"), menuBtn=$("#menuBtn");
+  const progBar=$("#progBar"), logEl=$("#log");
+  const canvas=$("#game"); const ctx=canvas.getContext("2d",{alpha:false});
+  const controls=$("#controls"), pauseTouch=$("#pauseTouch");
+  const MAX_LEVELS=30;
+
+  // Save keys
+  const SAVE_KEY="pixelrebellion.save.v5";
+  function loadSave(){ try{ return JSON.parse(localStorage.getItem(SAVE_KEY)||"null"); }catch{ return null; } }
+  function writeSave(obj){ localStorage.setItem(SAVE_KEY, JSON.stringify(obj)); refreshSaveUI(); }
+  function clearSave(){ localStorage.removeItem(SAVE_KEY); refreshSaveUI(); }
+  function refreshSaveUI(){
+    const s=loadSave();
+    if(s){ contBtn.disabled=false; saveLbl.textContent=`Lv ${s.level}, Lives ${s.lives}, Score ${s.score}`; bestLbl.textContent=s.best||s.level; }
+    else { contBtn.disabled=true; saveLbl.textContent="None"; bestLbl.textContent="—"; }
+  } refreshSaveUI();
+
+  // Input
+  const keys={};
+  addEventListener("keydown",e=>{ keys[e.key.toLowerCase()]=true; if([" ","arrowup"].includes(e.key.toLowerCase())) e.preventDefault(); });
+  addEventListener("keyup",e=>{ keys[e.key.toLowerCase()]=false; });
+
+  // Touch mapping
+  const keyAlias = { left:["arrowleft","a"], right:["arrowright","d"], up:["arrowup","w"], down:["arrowdown","s"], jump:[" ","z","arrowup"] };
+  function press(alias){ for(const k of keyAlias[alias]) keys[k]=true; }
+  function release(alias){ for(const k of keyAlias[alias]) keys[k]=false; }
+  function bindButton(el, alias){
+    const start = (e)=>{ e.preventDefault(); press(alias); };
+    const end = (e)=>{ e.preventDefault(); release(alias); };
+    ["touchstart","mousedown","pointerdown"].forEach(ev=>el.addEventListener(ev,start,{passive:false}));
+    ["touchend","touchcancel","mouseup","pointerup","pointercancel","mouseleave"].forEach(ev=>el.addEventListener(ev,end,{passive:false}));
+  }
+  document.querySelectorAll('.btn[data-key]').forEach(b=> bindButton(b, b.getAttribute('data-key')));
+  pauseTouch.addEventListener('click', ()=> pauseBtn.click());
+
+  const showControls = matchMedia("(max-width: 900px)").matches || matchMedia("(pointer: coarse)").matches;
+  if(showControls) controls.style.display = "flex";
+
+  // World/tile setup
+  const TILE=24;
+  const MAP_W=40, MAP_H=22;
+  const WORLD_W=MAP_W*TILE, WORLD_H=MAP_H*TILE;
+  const COLORS={
+    bg:"#0a0e13", air:"#0a0e13",
+    solid:"#7df3ff", solidTop:"#b7fbff",
+    ladder:"#ffc76d", ladderR:"#ffde9f",
+    portal:"#6dfc8b", portal2:"#9dffd0",
+    enemy:"#ff4d6d", enemy2:"#ff97aa", enemyEye:"#2b0010",
+    playerSkin:"#f6d7b0", playerHair:"#4b2c20", playerOutline:"#1a1a1a",
+    playerShirt:"#5ec1ff", playerShade:"#3793cf",
+    playerPants:"#5b6ee1", playerBoots:"#2f344a",
+    playerAcc:"#ffd166"
+  };
+
+  const T_AIR=0, T_SOLID=1, T_LADDER=2, T_PORTAL=3;
+  let map = new Uint8Array(MAP_W*MAP_H);
+  const idx=(x,y)=>y*MAP_W+x; const inb=(x,y)=>x>=0&&y>=0&&x<MAP_W&&y<MAP_H;
+
+  class Rect{constructor(x,y,w,h){this.x=x;this.y=y;this.w=w;this.h=h;}}
+  class Player extends Rect{
+    constructor(){ super(0,0,14,18); this.vx=0; this.vy=0; this.onGround=false; this.onLadder=false; this.spawnX=0; this.spawnY=0; this.animTime=0; this.face=1; }
+    resetAt(x,y){ this.x=x; this.y=y; this.vx=this.vy=0; this.spawnX=x; this.spawnY=y; this.animTime=0; }
+  }
+  class EnemyH extends Rect{
+    constructor(x,y,speed){ super(x,y,16,16); this.vx=(Math.random()<0.5?-speed:speed); this.baseY=y; this.t=0; }
+  }
+  class EnemyV extends Rect{
+    constructor(x,y,top,bottom,speed){ super(x,y,16,16); this.vy=(Math.random()<0.5?-speed:speed); this.top=top; this.bottom=bottom; this.t=0; }
+  }
+
+  let player=new Player(); let enemies=[]; let portalX=0, portalY=0;
+  let level=1, lives=3, score=0, best=1;
+  let state="menu"; let last=performance.now(); let camX=0, camY=0; let timeInLevel=0;
+
+  // Audio
+  let ac, bgMaster, hatInt, bassInt, arpInt;
+  function ctxAudio(){ if(!ac){ ac=new (window.AudioContext||window.webkitAudioContext)(); } return ac; }
+  function sfx(freq=440, dur=0.08, type="square", gain=0.12){
+    try{
+      const ac=ctxAudio(); const o=ac.createOscillator(); const g=ac.createGain();
+      o.type=type; o.frequency.value=freq; g.gain.value=gain; o.connect(g); g.connect(ac.destination);
+      o.start(); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+dur); o.stop(ac.currentTime+dur);
+    }catch{}
+  }
+  function startMusic(){
+    try{
+      const ac=ctxAudio(); if(bgMaster){ return; }
+      bgMaster=ac.createGain(); bgMaster.gain.value=0.12; bgMaster.connect(ac.destination);
+      const bassSeq=[48,48,43,45, 48,48,43,45]; const arpSeq=[60,64,67,72, 64,67,72,76]; let bassStep=0, arpStep=0;
+      function startBass(){ if(bassInt) clearInterval(bassInt); bassInt=setInterval(()=>{ const o=ac.createOscillator(); const g=ac.createGain(); o.type="square"; o.frequency.value= 440 * Math.pow(2,(bassSeq[bassStep%bassSeq.length]-69)/12); g.gain.value=0.08; o.connect(g); g.connect(bgMaster); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+0.28); o.stop(ac.currentTime+0.3); bassStep++; }, 300); }
+      function startArp(){ if(arpInt) clearInterval(arpInt); arpInt=setInterval(()=>{ const o=ac.createOscillator(); const g=ac.createGain(); o.type="triangle"; o.frequency.value= 440 * Math.pow(2,(arpSeq[arpStep%arpSeq.length]-69)/12); g.gain.value=0.06; o.connect(g); g.connect(bgMaster); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+0.18); o.stop(ac.currentTime+0.2); arpStep++; }, 200); }
+      function startHat(){ if(hatInt) clearInterval(hatInt); hatInt=setInterval(()=>{ const o=ac.createOscillator(); const g=ac.createGain(); o.type="square"; o.frequency.value=8000; g.gain.value=0.02; o.connect(g); g.connect(bgMaster); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+0.04); o.stop(ac.currentTime+0.05); }, 150); }
+      startBass(); startArp(); startHat();
+    }catch{}
+  }
+  function stopMusic(){ try{ if(hatInt) clearInterval(hatInt); if(bassInt) clearInterval(bassInt); if(arpInt) clearInterval(arpInt); hatInt=bassInt=arpInt=null; if(bgMaster){ bgMaster.disconnect(); bgMaster=null; } }catch{} }
+
+  function setTile(x,y,t){ if(inb(x,y)) map[idx(x,y)]=t; }
+  function getTile(x,y){ return inb(x,y)? map[idx(x,y)]: T_SOLID; }
+
+  function buildLevel(n){
+    map.fill(T_AIR); enemies.length=0;
+    for(let x=0;x<MAP_W;x++){ setTile(x,MAP_H-2,T_SOLID); setTile(x,MAP_H-1,T_SOLID); }
+    for(let y=0;y<MAP_H;y++){ setTile(0,y,T_SOLID); setTile(MAP_W-1,y,T_SOLID); }
+
+    const rng = mulberry32(1234 + n*101);
+    const rows = 6 + Math.min(10, Math.floor(n/2)); // up to 16
+    for(let i=0;i<rows;i++){
+      const y=MAP_H-4 - i*2;
+      let x=2;
+      while(x<MAP_W-2){
+        const w = 3 + Math.floor(rng()*Math.max(3, 8 - Math.floor(n/5)));
+        const gap = 2 + Math.floor(rng()*Math.max(2, 5 - Math.floor(n/6)));
+        for(let k=0;k<w && x+k<MAP_W-2;k++) setTile(x+k,y,T_SOLID);
+        x += w + gap;
+      }
+    }
+    const ladders = 5 + Math.floor(n*0.7);
+    for(let i=0;i<ladders;i++){
+      const lx = 2 + Math.floor(rng()*(MAP_W-4));
+      let from = MAP_H-5 - Math.floor(rng()* (rows*2-2));
+      let to = Math.max(2, from - (2 + Math.floor(rng()*5)));
+      for(let y=from;y>=to;y--) setTile(lx,y,T_LADDER);
+      setTile(lx-1,Math.min(MAP_H-3,to+1),T_SOLID);
+      setTile(lx+1,Math.max(2,from-1),T_SOLID);
+    }
+    // Start
+    let startSet=false;
+    for(let y=MAP_H-4;y>=2 && !startSet;y--){
+      for(let x=2;x<MAP_W-2;x++){
+        if(getTile(x,y)===T_SOLID && getTile(x,y-1)===T_AIR){ player.resetAt(x*TILE+4,(y-1)*TILE- player.h); startSet=true; break; }
+      }
+    }
+    // Portal
+    for(let y=2;y<MAP_H-6;y++){
+      for(let x=MAP_W-8;x<MAP_W-2;x++){
+        if(getTile(x,y)===T_AIR && getTile(x,y+1)===T_SOLID){ setTile(x,y,T_PORTAL); portalX=x; portalY=y; x=MAP_W; y=MAP_H; break; }
+      }
+    }
+    // Enemies
+    const baseSpeedH = 80 + n*3, baseSpeedV = 70 + n*4;
+    const eCount = 4 + Math.floor(n*1.2);
+    const verticalBias = n<=15 ? 0.35 : 0.6;
+    for(let i=0;i<eCount;i++){
+      if(Math.random()>verticalBias){
+        let placed=false, tries=0;
+        while(!placed && tries++<300){
+          const y = 3 + Math.floor(rng()*(MAP_H-6));
+          const x = 2 + Math.floor(rng()*(MAP_W-4));
+          if(getTile(x,y)===T_AIR && getTile(x,y+1)===T_SOLID){
+            enemies.push(new EnemyH(x*TILE+4,(y)*TILE-12, baseSpeedH + Math.floor(rng()*40)));
+            placed=true;
+          }
+        }
+      }else{
+        let placed=false, tries=0;
+        while(!placed && tries++<300){
+          const x = 2 + Math.floor(rng()*(MAP_W-4));
+          let top=-1,bottom=-1;
+          for(let y=2;y<MAP_H-2;y++){
+            if(getTile(x,y)===T_LADDER){ if(top<0) top=y; bottom=y; } else if(top>=0) break;
+          }
+          if(top>0 && bottom>top+2){
+            const ey = (top+1 + Math.floor(rng()*(bottom-top-2))) * TILE;
+            enemies.push(new EnemyV(x*TILE+4, ey, top*TILE, bottom*TILE, baseSpeedV + Math.floor(rng()*50)));
+            placed=true;
+          }
+        }
+      }
+    }
+  }
+
+  function mulberry32(a){return function(){let t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296}}
+
+  function rectVsTileSolid(r){
+    const eps=0.1, pts=[[r.x+eps, r.y+eps],[r.x+r.w-eps, r.y+eps],[r.x+eps, r.y+r.h-eps],[r.x+r.w-eps, r.y+r.h-eps]];
+    for(const [px,py] of pts){ const tx=Math.floor(px/TILE), ty=Math.floor(py/TILE); if(getTile(tx,ty)===T_SOLID) return true; } return false;
+  }
+  function isLadderAtRect(r){
+    const midX = Math.floor((r.x+r.w/2)/TILE);
+    const topY = Math.floor((r.y+2)/TILE);
+    const botY = Math.floor((r.y+r.h-2)/TILE);
+    return getTile(midX, topY)===T_LADDER || getTile(midX, botY)===T_LADDER;
+  }
+  function tileAt(x,y){ return getTile(Math.floor(x/TILE), Math.floor(y/TILE)); }
+
+  const GRAV=1300, MOVE=180, JUMP=430, MAX_FALL=900, CLIMB=120;
+  function update(dt){
+    if(state!=="play") return;
+    timeInLevel += dt; player.animTime += dt;
+    const left = keys["arrowleft"]||keys["a"];
+    const right = keys["arrowright"]||keys["d"];
+    const up = keys["arrowup"]||keys["w"];
+    const down = keys["arrowdown"]||keys["s"];
+    const jumpKey = keys[" "]||keys["z"]||keys["arrowup"]||false;
+    player.face = right ? 1 : (left ? -1 : player.face);
+
+    player.onLadder = isLadderAtRect(player);
+    if(player.onLadder && (up||down)){
+      player.vy = (up?-CLIMB:(down?CLIMB:0));
+      const cx = Math.floor((player.x+player.w/2)/TILE)*TILE + (TILE-player.w)/2;
+      player.x += (cx - player.x)*0.25;
+    }else if(!player.onLadder){
+      player.vy += GRAV*dt; if(player.vy>MAX_FALL) player.vy=MAX_FALL;
+    }
+    if(left && !right) player.vx = -MOVE;
+    else if(right && !left) player.vx = MOVE;
+    else player.vx *= 0.82;
+
+    if(jumpKey){
+      const feetY = player.y+player.h+1;
+      const tL = tileAt(player.x+2, feetY), tR = tileAt(player.x+player.w-2, feetY);
+      const onGroundNow = (tL===T_SOLID || tR===T_SOLID);
+      if(onGroundNow && !player.onLadder){ player.vy = -JUMP; sfx(520,0.07,"square",0.12); }
+      else if(player.onLadder){ player.onLadder=false; player.vy=-JUMP*0.85; sfx(520,0.07,"square",0.12); }
+    }
+
+    // collisions
+    player.x += player.vx*dt;
+    if(rectVsTileSolid(player)){ player.x -= player.vx*dt; while(!rectVsTileSolid(player)) player.x += Math.sign(player.vx||1); player.x -= Math.sign(player.vx||1); player.vx=0; }
+    const vyPrev=player.vy;
+    player.y += player.vy*dt;
+    if(rectVsTileSolid(player)){ player.y -= player.vy*dt; while(!rectVsTileSolid(player)) player.y += Math.sign(player.vy||1); player.y -= Math.sign(player.vy||1); if(vyPrev>0) player.onGround=true; player.vy=0; } else player.onGround=false;
+
+    camX = Math.max(0, Math.min(WORLD_W - canvas.width, player.x - canvas.width/2 + player.w/2));
+    camY = Math.max(0, Math.min(WORLD_H - canvas.height, player.y - canvas.height/2 + player.h/2));
+
+    for(const e of enemies){
+      if(e.vx!==undefined){
+        e.t += dt; e.x += e.vx*dt;
+        const aheadX = e.x + (e.vx>0? e.w+2 : -2);
+        const feetY = e.y + e.h + 1;
+        const tileAhead = tileAt(aheadX, feetY);
+        const wallAhead = tileAt(aheadX, e.y+e.h/2);
+        if(tileAhead!==T_SOLID || wallAhead===T_SOLID){ e.vx*=-1; }
+        e.y = e.baseY + Math.sin(e.t*6)*1.5;
+      }else{
+        e.t += dt; e.y += e.vy*dt;
+        if(e.y < e.top) { e.y = e.top; e.vy = Math.abs(e.vy); }
+        if(e.y > e.bottom-e.h) { e.y = e.bottom-e.h; e.vy = -Math.abs(e.vy); }
+      }
+      if(intersect(player,e)){ loseLife(); return; }
+    }
+
+    if(tileAt(player.x+player.w/2, player.y+player.h/2)===T_PORTAL){ levelClear(); return; }
+
+    const distTotal = Math.hypot((portalX*TILE)-(player.spawnX), (portalY*TILE)-(player.spawnY));
+    const distNow = Math.hypot((portalX*TILE)-(player.x), (portalY*TILE)-(player.y));
+    const pct = Math.max(0, Math.min(1, 1 - distNow/Math.max(1,distTotal)));
+    progBar.style.width = Math.round(pct*100)+"%";
+  }
+
+  function draw(){
+    ctx.fillStyle=COLORS.bg; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.save(); ctx.translate(-camX|0, -camY|0);
+    for(let y=0;y<WORLD_H;y+=8){ ctx.fillStyle = (y/8%2===0) ? "#0c141c" : "#0b1219"; ctx.fillRect(0,y,WORLD_W,8); }
+    for(let y=0;y<MAP_H;y++){
+      for(let x=0;x<MAP_W;x++){
+        const t = getTile(x,y), px=x*TILE, py=y*TILE;
+        if(t===T_SOLID){ ctx.fillStyle=COLORS.solid; ctx.fillRect(px,py,TILE,TILE); ctx.fillStyle=COLORS.solidTop; ctx.fillRect(px,py, TILE, 3); }
+        else if(t===T_LADDER){ ctx.fillStyle=COLORS.ladder; ctx.fillRect(px+8,py,8,TILE); ctx.fillStyle=COLORS.ladderR; for(let r=3;r<TILE;r+=6) ctx.fillRect(px+4,py+r,16,2); }
+        else if(t===T_PORTAL){ ctx.fillStyle=COLORS.portal; ctx.fillRect(px+4,py+4,TILE-8,TILE-8); ctx.fillStyle=COLORS.portal2; ctx.fillRect(px+8,py+8,TILE-16,TILE-16); }
+      }
+    }
+    for(const e of enemies){
+      ctx.fillStyle = COLORS.enemy; ctx.fillRect(e.x|0, e.y|0, e.w|0, e.h|0);
+      ctx.fillStyle = COLORS.enemy2; ctx.fillRect((e.x+2)|0,(e.y+2)|0,(e.w-4)|0,(e.h-4)|0);
+      const lookRight = (player.x > e.x) ? 1 : -1;
+      ctx.fillStyle = COLORS.enemyEye; const eyeY = (e.y+5)|0;
+      if(lookRight===1){ ctx.fillRect((e.x+10)|0, eyeY, 3,3); ctx.fillRect((e.x+6)|0,  eyeY, 3,3); }
+      else{ ctx.fillRect((e.x+3)|0, eyeY, 3,3); ctx.fillRect((e.x+7)|0, eyeY, 3,3); }
+    }
+    drawPlayer(ctx, player);
+    ctx.restore();
+  }
+
+  function drawPlayer(ctx,p){
+    const t = p.animTime; const walking = Math.abs(p.vx) > 10 && p.onGround && !p.onLadder; const climbing = p.onLadder; const jumping = !p.onGround && !climbing; const facingRight = p.face>=0; const x = p.x|0, y=p.y|0;
+    ctx.fillStyle="rgba(0,0,0,0.25)"; ctx.fillRect(x-2, (y+p.h)|0, p.w+4, 2);
+    function outRect(px,py,w,h,color,outline){ ctx.fillStyle=outline; ctx.fillRect(px-1,py-1,w+2,1); ctx.fillRect(px-1,py+h,w+2,1); ctx.fillRect(px-1,py,1,h); ctx.fillRect(px+w,py,1,h); ctx.fillStyle=color; ctx.fillRect(px,py,w,h); }
+    outRect(x+2, y+7, 10,8, COLORS.playerShirt, COLORS.playerOutline);
+    outRect(x+3, y, 8,7, COLORS.playerSkin, COLORS.playerOutline);
+    ctx.fillStyle=COLORS.playerHair; ctx.fillRect(x+3, y, 8,2); ctx.fillRect(x+3, y+2, 3,2); ctx.fillRect(x+8, y+2, 3,2);
+    ctx.fillStyle=COLORS.playerOutline; if(facingRight){ ctx.fillRect(x+8, y+3, 2,2); ctx.fillRect(x+5, y+3, 2,2); } else{ ctx.fillRect(x+4, y+3, 2,2); ctx.fillRect(x+7, y+3, 2,2); }
+    if(((t*2)|0)%4===0) ctx.fillRect(x+6, y+5, 2,1);
+    ctx.fillStyle=COLORS.playerAcc; ctx.fillRect(x+2, y+12, 10,1);
+    // Arms
+    if(climbing){ outRect(x+1, y+8, 3,5, COLORS.playerSkin, COLORS.playerOutline); outRect(x+10, y+9, 3,5, COLORS.playerSkin, COLORS.playerOutline); }
+    else if(walking){ const s = Math.sin(t*12); const leftOff = s>0?1:0, rightOff = s<0?1:0; outRect(x+1, y+8, 3,5-leftOff, COLORS.playerSkin, COLORS.playerOutline); outRect(x+10, y+8+rightOff, 3,5-rightOff, COLORS.playerSkin, COLORS.playerOutline); }
+    else{ outRect(x+1, y+8, 3,5, COLORS.playerSkin, COLORS.playerOutline); outRect(x+10, y+8, 3,5, COLORS.playerSkin, COLORS.playerOutline); }
+    // Legs
+    if(climbing){ outRect(x+3, y+14, 3,4, COLORS.playerPants, COLORS.playerOutline); outRect(x+8, y+14, 3,4, COLORS.playerPants, COLORS.playerOutline); }
+    else if(walking){ const s = Math.sin(t*12); const leftH = 4 + (s>0?2:0); const rightH = 4 + (s<0?2:0); outRect(x+3, y+14, 3,leftH, COLORS.playerPants, COLORS.playerOutline); outRect(x+8, y+14, 3,rightH, COLORS.playerPants, COLORS.playerOutline); }
+    else{ outRect(x+3, y+14, 3,4, COLORS.playerPants, COLORS.playerOutline); outRect(x+8, y+14, 3,4, COLORS.playerPants, COLORS.playerOutline); }
+    // Boots
+    outRect(x+3, y+18, 3,2, COLORS.playerBoots, COLORS.playerOutline); outRect(x+8, y+18, 3,2, COLORS.playerBoots, COLORS.playerOutline);
+  }
+
+  function intersect(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
+
+  function levelClear(){
+    score += 100; sfx(880,0.2,"triangle",0.12); log(`Level ${level} cleared. +100 score.`); level++;
+    if(level>MAX_LEVELS){ state="win"; stopMusic(); log("All levels cleared. You win."); saveProgress(); setTimeout(toMenu, 1200); return; }
+    best = Math.max(best, level); saveProgress(); loadLevel(level);
+  }
+
+  function loseLife(){
+    lives--; sfx(180,0.2,"square",0.16); log(`Hit by enemy. Lives left: ${lives}`);
+    if(lives<=0){ state="over"; stopMusic(); log("Game Over."); saveProgress(true); setTimeout(toMenu, 1200); }
+    else{ player.resetAt(player.spawnX, player.spawnY); }
+  }
+
+  function saveProgress(gameOver=false){ writeSave({ level: Math.max(1, Math.min(level,MAX_LEVELS)), lives: Math.max(0,lives), score, best: Math.max(best, level- (state==="win"?0:1)), gameOver }); }
+
+  function loadLevel(n, keepLivesScore=true){
+    timeInLevel=0; if(!keepLivesScore){ lives=3; score=0; }
+    buildLevel(n); levelLbl.textContent=n; livesLbl.textContent=lives; scoreLbl.textContent=score; state="play"; last=performance.now(); log(`Level ${n} start.`);
+    const a = ctxAudio(); if(a.state==="suspended"){ a.resume(); } startMusic();
+  }
+
+  function toMenu(){ state="menu"; gameCard.style.display="none"; menuCard.style.display="block"; }
+
+  function log(msg){ const t = timeInLevel.toFixed(1).padStart(5," "); logEl.textContent = `[${t}s] ${msg}\n` + logEl.textContent; }
+
+  // UI handlers
+  newBtn.onclick=()=>{ level=1; lives=3; score=0; best=1; writeSave({level,lives,score,best}); menuCard.style.display="none"; gameCard.style.display="block"; loadLevel(level,false); };
+  contBtn.onclick=()=>{ const s=loadSave(); if(!s){ return; } level = Math.min(MAX_LEVELS, Math.max(1, s.level)); lives = Math.max(1, s.lives||3); score = s.score||0; best=s.best||level; menuCard.style.display="none"; gameCard.style.display="block"; loadLevel(level,true); };
+  clearBtn.onclick=()=>{ clearSave(); };
+
+  pauseBtn.onclick=()=>{ if(state==="play"){ state="pause"; pauseBtn.textContent="Resume"; stopMusic(); } else if(state==="pause"){ state="play"; pauseBtn.textContent="Pause"; const a=ctxAudio(); if(a.state==="suspended") a.resume(); startMusic(); last=performance.now(); } };
+  restartBtn.onclick=()=>{ if(state==="play"||state==="pause"){ stopMusic(); loadLevel(level,true); } };
+  menuBtn.onclick=()=>{ stopMusic(); toMenu(); };
+
+  addEventListener("keydown",(e)=>{ if(e.key.toLowerCase()==="p") pauseBtn.click(); if(e.key.toLowerCase()==="r") restartBtn.click(); });
+
+  // Game loop
+  function loop(){ const t=performance.now(); const dt=Math.min(1/30,(t-last)/1000); last=t; if(state==="play") update(dt); draw(); requestAnimationFrame(loop); }
+  loop();
+})();</script>
+</body>
+</html>
